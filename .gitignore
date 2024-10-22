@@ -1,0 +1,10 @@
+# Ignore compiled files
+*.o
+*.exe
+*.out
+
+# Ignore IDE specific files
+*.vscode/
+
+models/*
+build/*
