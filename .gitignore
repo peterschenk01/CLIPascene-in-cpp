@@ -6,6 +6,5 @@
 # Ignore IDE specific files
 *.vscode/
 
-models/*
-!models/.gitkeep
+models/
 build/
