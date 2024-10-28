@@ -8,6 +8,8 @@
 
 void strokes_initialization();
 
-torch::Tensor preprocess_image(const std::string& image_path);
+torch::Tensor preprocess_image(const cv::Mat img);
+
+cv::Mat center_crop(const cv::Mat &image, int size);
 
 #endif

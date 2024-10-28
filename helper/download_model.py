@@ -4,11 +4,11 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import CLIP.clip as clip
 
-# Downloads the CLIP model and converts it for LibTorch
-# For this you need the CLIP library. You can get it at https://github.com/openai/CLIP or as submodule of this Repository
+# Downloads the CLIP model and converts it to TorchScript format
+# For this you need the CLIP library. You can get it at https://github.com/openai/CLIP or as submodule of this repository
 
 # Load the CLIP model (ViT-B/32)
-model, preprocess = clip.load("ViT-B/32", device="cpu")
+model, preprocess = clip.load("ViT-B/32", device="cpu", jit = False)
 
 # Set the model to evaluation mode
 model.eval()
