@@ -42,7 +42,10 @@ torch::Tensor preprocess_image(const cv::Mat img) {
     cv::resize(image, image, cv::Size(224, 224), (0,0), (0,0), cv::INTER_CUBIC);
     
     // CenterCrop image
-    image = center_crop(image, 224);
+    int x = (image.cols - 224) / 2; // Set starting points
+    int y = (image.rows - 224) / 2; // Set starting points
+    cv::Rect crop_region(x, y, 224, 224); // Specify crop region
+    image = image(crop_region); // Crop image
 
     // Convert image to RGB
     if (image.channels() == 3) {
@@ -67,18 +70,4 @@ torch::Tensor preprocess_image(const cv::Mat img) {
     )(img_tensor);
 
     return img_tensor.clone(); // Clone to avoid memory issues
-}
-
-
-// CenterCrop function: crops the central region of an image
-cv::Mat center_crop(const cv::Mat &image, int size) {
-    // Set starting points
-    int x = (image.cols - size) / 2;
-    int y = (image.rows - size) / 2;
-    
-    // Specify crop region
-    cv::Rect crop_region(x, y, size, size);
-
-    // Crop and return the image
-    return image(crop_region).clone();
 }

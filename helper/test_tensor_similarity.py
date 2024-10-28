@@ -50,9 +50,5 @@ np.savetxt('cpp_tensor.txt', cpp_array, fmt='%.2f', delimiter=',')
 python_array = tensor.cpu().reshape(-1, tensor.size(-1)).numpy()
 np.savetxt('python_tensor.txt', python_array, fmt='%.2f', delimiter=',')"""
 
-is_close = torch.allclose(tensor, cpp_tensor)
-
 mse = torch.mean((tensor - cpp_tensor) ** 2).item()
-
-print(is_close)
-print(mse)
+print(f"Mean Squared Error: {mse}")
