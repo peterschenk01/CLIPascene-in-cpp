@@ -5,7 +5,7 @@
 #include "strokes_initialization.h"
 
 void strokes_initialization() {
-    std::string model_path = "../models/clip_vit_b32.pt";
+    std::string model_path = "../models/clip_vit_b32_scripted.pt";
     std::string image_path = "../input_images/input_image.png";
     torch::jit::script::Module model;
 
@@ -30,8 +30,11 @@ void strokes_initialization() {
         throw std::runtime_error("Error: Could not load image from " + image_path);
     }
 
-    torch::Tensor tensor = preprocess_image(image);
-    torch::save(tensor, "../cpp_tensor.pt");
+    // Convert image into a tensor that can be used by the CLIP model
+    torch::Tensor image_input = preprocess_image(image).to(torch::kCUDA);
+    // torch::save(image_input, "../cpp_tensor.pt");
+
+    attn_map(image_input, model);
 }
 
 // Function to preprocess the image
@@ -54,13 +57,15 @@ torch::Tensor preprocess_image(const cv::Mat img) {
         cv::cvtColor(image, image, cv::COLOR_BGRA2RGB); // Image is in BGRA format, convert to RGB
     } else if (image.channels() == 1) {
         cv::cvtColor(image, image, cv::COLOR_GRAY2RGB); // If grayscale, convert to RGB by replicating the single channel
+    } else {
+        throw std::invalid_argument("Unsupported image format: must be 1, 3, or 4 channels.");
     }
 
     // Convert image to tensor
     torch::Tensor img_tensor = torch::from_blob(image.data, {1, image.rows, image.cols, 3}, torch::kByte);
     img_tensor = img_tensor.to(torch::kFloat) / 255.0;
 
-    // Permute to (C, H, W) format
+    // Permute to (B, C, H, W) format
     img_tensor = img_tensor.permute({0, 3, 1, 2});
 
     // Normalize
@@ -69,5 +74,26 @@ torch::Tensor preprocess_image(const cv::Mat img) {
         {0.26862954, 0.26130258, 0.27577711}  // Std deviation for CLIP
     )(img_tensor);
 
-    return img_tensor.clone(); // Clone to avoid memory issues
+    return img_tensor;
+}
+
+void attn_map(torch::Tensor image_input, torch::jit::script::Module model){
+    torch::Tensor images = image_input.repeat({1, 1, 1, 1});
+    auto res = model.run_method("encode_image", images);
+
+    // Access the resblocks module
+    auto resblocks = model.attr("visual").toModule().attr("transformer").toModule().attr("resblocks").toModule();
+    // Store each child module in a vector
+    std::vector<torch::jit::Module> image_attn_blocks;
+    for (const auto& named_child : resblocks.named_children()) {
+        image_attn_blocks.push_back(named_child.value);
+    }
+
+    auto num_tokens = image_attn_blocks[0].attr("attn").type();
+
+    std::cout << num_tokens->str() << std::endl;
+
+    for (const auto& named_child : resblocks.named_children()){
+        std::cout << named_child.name << std::endl;
+    }
 }

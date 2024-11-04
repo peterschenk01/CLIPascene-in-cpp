@@ -10,4 +10,6 @@ void strokes_initialization();
 
 torch::Tensor preprocess_image(const cv::Mat img);
 
+void attn_map(torch::Tensor image_input, torch::jit::Module model);
+
 #endif
