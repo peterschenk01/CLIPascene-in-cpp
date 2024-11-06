@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import CLIP_.clip as clip
+import CLIP.clip as clip
 from torchvision import transforms
 import torch
 from PIL import Image
@@ -29,7 +29,7 @@ def get_target(image_path):
     return target_
 
 
-model, preprocess = clip.load("ViT-B/32", device="cpu", jit = False)
+model, preprocess = clip.load("ViT-B/32", device="cuda", jit = False)
 
 model.eval().to("cuda")
 
@@ -40,6 +40,10 @@ data_transforms = transforms.Compose([
                 ])
 
 tensor = data_transforms(target).to("cuda")
+
+scripted_model = torch.jit.script(model)
+
+scripted_model.to("cuda")
 
 #cpp_tensor_model = torch.jit.load("cpp_tensor.pt")
 #cpp_tensor = list(cpp_tensor_model.parameters())[0]
@@ -55,7 +59,9 @@ def interpret(image, texts, model, device):
     model.zero_grad()
     image_attn_blocks = list(dict(model.visual.transformer.resblocks.named_children()).values())
 
-    print(image_attn_blocks[0].attn_probs)
+    torch.set_printoptions(threshold=torch.inf)
+    print(image_attn_blocks[0].attn_weights)
+    #print(res)
 
     """num_tokens = image_attn_blocks[0].attn_probs.shape[-1]
     R = torch.eye(num_tokens, num_tokens, dtype=image_attn_blocks[0].attn_probs.dtype).to(device)
@@ -79,4 +85,4 @@ def interpret(image, texts, model, device):
     image_relevance = (image_relevance - image_relevance.min()) / (image_relevance.max() - image_relevance.min())
     return image_relevance"""
 
-interpret(tensor, "", model, "cuda")
+interpret(tensor, "", scripted_model, "cuda")

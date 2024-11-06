@@ -79,7 +79,8 @@ torch::Tensor preprocess_image(const cv::Mat img) {
 
 void attn_map(torch::Tensor image_input, torch::jit::script::Module model){
     torch::Tensor images = image_input.repeat({1, 1, 1, 1});
-    auto res = model.run_method("encode_image", images);
+
+    auto result = model.run_method("encode_image", images);
 
     // Access the resblocks module
     auto resblocks = model.attr("visual").toModule().attr("transformer").toModule().attr("resblocks").toModule();
@@ -89,11 +90,5 @@ void attn_map(torch::Tensor image_input, torch::jit::script::Module model){
         image_attn_blocks.push_back(named_child.value);
     }
 
-    auto num_tokens = image_attn_blocks[0].attr("attn").type();
-
-    std::cout << num_tokens->str() << std::endl;
-
-    for (const auto& named_child : resblocks.named_children()){
-        std::cout << named_child.name << std::endl;
-    }
+    std::cout << image_attn_blocks[0].attr("attn_weights") << std::endl;
 }

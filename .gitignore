@@ -6,6 +6,9 @@
 # Ignore IDE specific files
 *.vscode/
 
+#CLIP
+CLIP/clip/__pycache__/
+CLIP_/
+
 models/
 build/
-CLIP_/
