@@ -7,7 +7,6 @@ import torch
 from PIL import Image
 import PIL
 import numpy as np
-import matplotlib.pyplot as plt
 
 # torch.set_printoptions(threshold=torch.inf)
 # np.set_printoptions(threshold=np.inf)
@@ -71,8 +70,8 @@ image_input = preprocess_image("input_images/input_image.png", preprocess)
 
 old_tensor = attn_map(image_input, model)
 
-torch.save(old_tensor, "old_tensor.pt")
-print(old_tensor)
+# torch.save(old_tensor, "old_tensor.pt")
+# print(old_tensor)
 
 # cpp_tensor_model = torch.jit.load("cpp_tensor.pt")
 # cpp_tensor = list(cpp_tensor_model.parameters())[0]

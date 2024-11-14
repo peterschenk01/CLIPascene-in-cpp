@@ -25,7 +25,7 @@ void strokes_initialization() {
     cout << "Successfully loaded the model and moved to GPU" << endl;
 
     // Load image
-    cv::Mat image = cv::imread(image_path, cv::IMREAD_UNCHANGED);
+    cv::Mat image = cv::imread(image_path);
 
     // Check if the image was loaded successfully
     if (image.empty()) {
@@ -36,16 +36,32 @@ void strokes_initialization() {
     at::Tensor image_input = preprocess_image(image).to(torch::kCUDA);
 
     // Get attention map
-    at::Tensor attn_map = get_attention_map(image_input, model);
+    at::Tensor attn_map = get_attention_map(image_input, model).to(torch::kCUDA);
 
-    cout << attn_map << endl;
+    // Get edge map
+    at::Tensor edge_map = get_edge_map(image).to(torch::kCUDA);
 
-    torch::save(attn_map.cpu(), "../cpp_tensor.pt");
+    // Get intersection between attention map and edge map
+    at::Tensor intersec_map = attn_map * edge_map;
+
+
+
+    cv::Mat temp(224, 224, CV_32FC1, edge_map.to(torch::kCPU).data_ptr<float>());
+    temp.convertTo(temp, CV_8UC1, 255);
+    cv::imwrite("../temp.png", temp);
+
+    cv::Mat temp2(224, 224, CV_32FC1, attn_map.to(torch::kCPU).data_ptr<float>());
+    temp2.convertTo(temp2, CV_8UC1, 255);
+    cv::imwrite("../temp2.png", temp2);
+
+    cv::Mat temp3(224, 224, CV_32FC1, intersec_map.to(torch::kCPU).data_ptr<float>());
+    temp3.convertTo(temp3, CV_8UC1, 255);
+    cv::imwrite("../temp3.png", temp3);
 }
 
 // Function to preprocess the image
-at::Tensor preprocess_image(const cv::Mat image_input) {
-    cv::Mat image = image_input;
+at::Tensor preprocess_image(cv::Mat image_input) {
+    cv::Mat image = image_input.clone();
 
     // Convert image to RGB
     if (image.channels() == 3) {
@@ -114,7 +130,61 @@ at::Tensor get_attention_map(at::Tensor image_input, torch::jit::script::Module 
     attn_map = attn_map.reshape({224, 224});
     attn_map = attn_map.toType(torch::kFloat32);
     
-    attn_map = (attn_map - attn_map.min()) / (attn_map.max() - attn_map.min()); // Normalize
+    // Normalize
+    attn_map = (attn_map - attn_map.min()) / (attn_map.max() - attn_map.min()); 
 
     return attn_map;
+}
+
+// Get the edgemap to the given image using XDoG edge detection. For Documentation google XDoG Implementations
+at::Tensor get_edge_map(cv::Mat image_input) {
+    double gamma = 0.98;
+    double phi = 200.0;
+    double epsilon = -0.1;
+    double sigma = 0.8;
+    double k = 10;
+
+    cv::Mat image = image_input.clone();
+
+    cv::cvtColor(image, image, cv::COLOR_BGR2GRAY);
+
+    cv::Mat blurred1, blurred2;
+    cv::GaussianBlur(image, blurred1, cv::Size(0, 0), sigma);
+    cv::GaussianBlur(image, blurred2, cv::Size(0, 0), sigma * k);
+
+    cv::Mat xdog = blurred1 - (gamma * blurred2);
+
+    xdog.convertTo(xdog, CV_32F, 1.0 / 255.0);
+    
+    for (int y = 0; y < xdog.rows; y++) {
+        for (int x = 0; x < xdog.cols; x++) {
+            float val = xdog.at<float>(y, x);
+
+            if (val < epsilon) {
+                xdog.at<float>(y, x) = 1.0f;
+            } else {
+                xdog.at<float>(y, x) = 1.0f + tanh(phi * (val + epsilon));
+            }
+        }
+    }
+
+    // Resize
+    cv::resize(xdog, xdog, cv::Size(224, 224), (0,0), (0,0), cv::INTER_CUBIC);
+    
+    // CenterCrop image
+    int x = (xdog.cols - 224) / 2; // Set starting points
+    int y = (xdog.rows - 224) / 2; // Set starting points
+    cv::Rect crop_region(x, y, 224, 224); // Specify crop region
+    xdog = xdog(crop_region); // Crop image
+
+    // Convert image to tensor
+    at::Tensor xdog_tensor = torch::from_blob(xdog.data, {xdog.rows, xdog.cols}, torch::kFloat32);
+
+    // Normalize
+    xdog_tensor = (xdog_tensor - xdog_tensor.min()) / (xdog_tensor.max() - xdog_tensor.min());
+
+    // Binarize
+    xdog_tensor = (xdog_tensor >= 0.5f).to(torch::kFloat32);
+
+    return xdog_tensor;
 }
