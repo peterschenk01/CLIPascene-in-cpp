@@ -8,10 +8,12 @@
 
 void strokes_initialization();
 
-at::Tensor preprocess_image(cv::Mat image_input);
+torch::Tensor preprocess_image(cv::Mat image_input);
 
-at::Tensor get_attention_map(at::Tensor image_input, torch::jit::script::Module model);
+torch::Tensor get_attention_map(torch::Tensor image_input, torch::jit::script::Module model);
 
-at::Tensor get_edge_map(cv::Mat image_input);
+torch::Tensor get_edge_map(cv::Mat image_input);
+
+torch::Tensor softmax_above_zero(torch::Tensor x);
 
 #endif

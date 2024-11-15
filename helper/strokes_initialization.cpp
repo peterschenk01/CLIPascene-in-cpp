@@ -33,16 +33,19 @@ void strokes_initialization() {
     }
 
     // Convert image into a tensor that can be used by the CLIP model
-    at::Tensor image_input = preprocess_image(image).to(torch::kCUDA);
+    torch::Tensor image_input = preprocess_image(image).to(torch::kCUDA);
 
     // Get attention map
-    at::Tensor attn_map = get_attention_map(image_input, model).to(torch::kCUDA);
+    torch::Tensor attn_map = get_attention_map(image_input, model).to(torch::kCUDA);
 
     // Get edge map
-    at::Tensor edge_map = get_edge_map(image).to(torch::kCUDA);
+    torch::Tensor edge_map = get_edge_map(image).to(torch::kCUDA);
 
-    // Get intersection between attention map and edge map
-    at::Tensor intersec_map = attn_map * edge_map;
+    // Get distribution map by multiplying the attention map with the edge map
+    torch::Tensor distribution_map = attn_map * edge_map;
+    // Softmax only values above zero
+    distribution_map = softmax_above_zero(distribution_map);
+
 
 
 
@@ -54,13 +57,13 @@ void strokes_initialization() {
     temp2.convertTo(temp2, CV_8UC1, 255);
     cv::imwrite("../temp2.png", temp2);
 
-    cv::Mat temp3(224, 224, CV_32FC1, intersec_map.to(torch::kCPU).data_ptr<float>());
+    cv::Mat temp3(224, 224, CV_32FC1, distribution_map.to(torch::kCPU).data_ptr<float>());
     temp3.convertTo(temp3, CV_8UC1, 255);
     cv::imwrite("../temp3.png", temp3);
 }
 
 // Function to preprocess the image
-at::Tensor preprocess_image(cv::Mat image_input) {
+torch::Tensor preprocess_image(cv::Mat image_input) {
     cv::Mat image = image_input.clone();
 
     // Convert image to RGB
@@ -84,7 +87,7 @@ at::Tensor preprocess_image(cv::Mat image_input) {
     image = image(crop_region); // Crop image
 
     // Convert image to tensor
-    at::Tensor img_tensor = torch::from_blob(image.data, {image.rows, image.cols, 3}, torch::kByte).unsqueeze(0);
+    torch::Tensor img_tensor = torch::from_blob(image.data, {image.rows, image.cols, 3}, torch::kByte).unsqueeze(0);
 
     // Convert to Float32 and Normalize
     img_tensor = img_tensor.toType(torch::kFloat32).div(255);
@@ -102,8 +105,8 @@ at::Tensor preprocess_image(cv::Mat image_input) {
 }
 
 // Get the attention map from the given image
-at::Tensor get_attention_map(at::Tensor image_input, torch::jit::script::Module model){
-    at::Tensor image = image_input.clone();
+torch::Tensor get_attention_map(torch::Tensor image_input, torch::jit::script::Module model){
+    torch::Tensor image = image_input.clone();
 
     // Encode image to fill model with values (result is not needed further)
     auto result = model.run_method("encode_image", image);
@@ -112,13 +115,13 @@ at::Tensor get_attention_map(at::Tensor image_input, torch::jit::script::Module 
     auto resblocks = model.attr("visual").toModule().attr("transformer").toModule().attr("resblocks").toModule();
 
     // Store the 12 attention maps in a vector
-    vector<at::Tensor> attns;
+    vector<torch::Tensor> attns;
     for (const auto& named_child : resblocks.named_children()) {
-        at::Tensor attn = named_child.value.attr("attn_weights").toTensor().detach(); // [1, 50, 50]
+        torch::Tensor attn = named_child.value.attr("attn_weights").toTensor().detach(); // [1, 50, 50]
         attns.push_back(attn);
     }
 
-    at::Tensor attn_map;
+    torch::Tensor attn_map;
     attn_map = torch::cat(attns); // Concatenate into single Tensor [12, 50, 50]
     attn_map = attn_map.index({torch::indexing::Slice(), 0, torch::indexing::Slice(1, torch::indexing::None)}); // [12, 1, 49]
     attn_map = attn_map.mean(0).unsqueeze(0); // Average the 12 maps
@@ -136,8 +139,8 @@ at::Tensor get_attention_map(at::Tensor image_input, torch::jit::script::Module 
     return attn_map;
 }
 
-// Get the edgemap to the given image using XDoG edge detection. For Documentation google XDoG Implementations
-at::Tensor get_edge_map(cv::Mat image_input) {
+// Get the edgemap to the given image using XDoG edge detection
+torch::Tensor get_edge_map(cv::Mat image_input) {
     double gamma = 0.98;
     double phi = 200.0;
     double epsilon = -0.1;
@@ -146,6 +149,7 @@ at::Tensor get_edge_map(cv::Mat image_input) {
 
     cv::Mat image = image_input.clone();
 
+    // Grayscale image
     cv::cvtColor(image, image, cv::COLOR_BGR2GRAY);
 
     cv::Mat blurred1, blurred2;
@@ -154,6 +158,7 @@ at::Tensor get_edge_map(cv::Mat image_input) {
 
     cv::Mat xdog = blurred1 - (gamma * blurred2);
 
+    // Convert to Float32 and normalize
     xdog.convertTo(xdog, CV_32F, 1.0 / 255.0);
     
     for (int y = 0; y < xdog.rows; y++) {
@@ -178,7 +183,7 @@ at::Tensor get_edge_map(cv::Mat image_input) {
     xdog = xdog(crop_region); // Crop image
 
     // Convert image to tensor
-    at::Tensor xdog_tensor = torch::from_blob(xdog.data, {xdog.rows, xdog.cols}, torch::kFloat32);
+    torch::Tensor xdog_tensor = torch::from_blob(xdog.data, {xdog.rows, xdog.cols}, torch::kFloat32);
 
     // Normalize
     xdog_tensor = (xdog_tensor - xdog_tensor.min()) / (xdog_tensor.max() - xdog_tensor.min());
@@ -187,4 +192,11 @@ at::Tensor get_edge_map(cv::Mat image_input) {
     xdog_tensor = (xdog_tensor >= 0.5f).to(torch::kFloat32);
 
     return xdog_tensor;
+}
+
+// Softmax given tensor but only consider values above zero
+torch::Tensor softmax_above_zero(torch::Tensor x) {
+    x = torch::where(x > 0, x, -std::numeric_limits<float>::infinity()); // set all values that are 0 to negative infinity
+    torch::Tensor e_x = torch::exp(x - x.max());
+    return e_x / e_x.sum();
 }
