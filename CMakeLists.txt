@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.12)
 
 project("CLIPascene" CXX)
 
@@ -14,10 +14,16 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 # OpenCV
 find_package(OpenCV REQUIRED)
 
+include_directories(diffvg)
+
 add_executable(clipascene 
-                clipascene.cpp
-                helper/strokes_initialization.cpp
-                helper/strokes_initialization.h
+                "clipascene.cpp"
+                "helper/strokes_initialization.cpp"
+                "helper/strokes_initialization.h"
+                "helper/diffvg/cppdiffvg.cpp"
+                "helper/diffvg/cppdiffvg.h"
+                "helper/diffvg/pixel_filter.h"
+                "helper/diffvg/path.h"
                 )
 
-target_link_libraries(clipascene "${TORCH_LIBRARIES}" "${OpenCV_LIBS}")
+target_link_libraries(clipascene PRIVATE "${TORCH_LIBRARIES}" "${OpenCV_LIBS}")

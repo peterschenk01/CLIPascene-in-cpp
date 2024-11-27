@@ -1,15 +1,19 @@
 #include <iostream>
+#include <random>
 #include <torch/torch.h>
 #include <torch/script.h>
 #include <opencv2/opencv.hpp>
 #include "strokes_initialization.h"
+#include "diffvg/cppdiffvg.h"
 
 using namespace std;
+using custom_variant = variant<int, bool, torch::Tensor, OutputType, ShapeType, ColorType, FilterType>;
 
 void strokes_initialization() {
     string model_path = "../models/clip_vit_b32_scripted.pt";
     string image_path = "../input_images/input_image.png";
     torch::jit::script::Module model;
+    int num_strokes = 64;
 
     // Load the model
     try {
@@ -46,19 +50,46 @@ void strokes_initialization() {
     // Softmax only values above zero
     distribution_map = softmax_above_zero(distribution_map);
 
+    // Convert to 1D Tensor
+    torch::Tensor distr_flat = distribution_map.flatten(); 
+    // Sample indices
+    torch::Tensor indices = torch::multinomial(distr_flat, num_strokes, false); 
+    // Convert indices to a 2D Tensor of shape [num_strokes, 2]
+    auto distr_shape = distribution_map.sizes()[1];
+    torch::Tensor row_indices = (indices / distr_shape).to(torch::kInt32);
+    torch::Tensor col_indices = (indices % distr_shape).to(torch::kInt32);
+    indices = torch::stack({row_indices, col_indices}, 1);
+    // Normalize indices
+    torch::Tensor indices_normalised = indices / 224;
+
+    get_path(indices_normalised, 0);
+
+    vector<custom_variant> vec = RenderFunction::serialize_scene(224, 224, 
+                                                                vector<path::Path>({path::Path(torch::rand({2,2,2}), torch::rand({2, 2, 2}), false)}), 
+                                                                vector<path::PathGroup>({path::PathGroup(torch::rand({2,2,2}))}));
+    
+    for(int i = 0; i < vec.size(); i++) {
+        visit([](auto& x){
+            cout << typeid(x).name() << endl;
+        }, vec[i]);
+    }
+    
 
 
 
-    cv::Mat temp(224, 224, CV_32FC1, edge_map.to(torch::kCPU).data_ptr<float>());
-    temp.convertTo(temp, CV_8UC1, 255);
-    cv::imwrite("../temp.png", temp);
 
-    cv::Mat temp2(224, 224, CV_32FC1, attn_map.to(torch::kCPU).data_ptr<float>());
-    temp2.convertTo(temp2, CV_8UC1, 255);
-    cv::imwrite("../temp2.png", temp2);
-
+    // Visualize (temp)
+    distribution_map = (distribution_map - distribution_map.min()) / (distribution_map.max() - distribution_map.min()); 
     cv::Mat temp3(224, 224, CV_32FC1, distribution_map.to(torch::kCPU).data_ptr<float>());
     temp3.convertTo(temp3, CV_8UC1, 255);
+    cv::applyColorMap(temp3, temp3, cv::COLORMAP_VIRIDIS);
+    for(int i = 0; i < num_strokes; i++) {
+        int row = row_indices[i].item<int>();
+        int col = col_indices[i].item<int>();
+        temp3.at<cv::Vec3b>(row, col)[0] = 0;
+        temp3.at<cv::Vec3b>(row, col)[1] = 0;
+        temp3.at<cv::Vec3b>(row, col)[2] = 255;
+    }
     cv::imwrite("../temp3.png", temp3);
 }
 
@@ -77,7 +108,7 @@ torch::Tensor preprocess_image(cv::Mat image_input) {
         throw invalid_argument("Unsupported image format: must be 1, 3, or 4 channels.");
     }
 
-    // Resize to 224x224
+    // Resize
     cv::resize(image, image, cv::Size(224, 224), (0,0), (0,0), cv::INTER_CUBIC);
     
     // CenterCrop image
@@ -194,9 +225,31 @@ torch::Tensor get_edge_map(cv::Mat image_input) {
     return xdog_tensor;
 }
 
+void get_path(torch::Tensor indices, int strokes_counter) {
+    torch::Tensor inds = indices.clone();
+    float radius = 0.05f;
+    // Random number generator
+    random_device dev;
+    mt19937 rng(dev());
+    uniform_real_distribution<float> dis(0.0f, 1.0f);
+    
+    torch::Tensor points = torch::zeros({4, 2}).to(torch::kFloat32).to(torch::kCUDA);
+
+    torch::Tensor p0 = inds.index({strokes_counter});
+    points.index_put_({0}, p0);
+
+    for(int i = 1; i < points.size({0}); i++) {
+        torch::Tensor p1 = torch::tensor({p0.index({0}).item<float>() + radius * (dis(rng) - 0.5f), p0.index({1}).item<float>() + radius * (dis(rng) - 0.5f)});
+        points.index_put_({i}, p1);
+        p0 = p1;
+    }
+
+    points = points * 224;
+}
+
 // Softmax given tensor but only consider values above zero
 torch::Tensor softmax_above_zero(torch::Tensor x) {
-    x = torch::where(x > 0, x, -std::numeric_limits<float>::infinity()); // set all values that are 0 to negative infinity
+    x = torch::where(x > 0, x, -std::numeric_limits<float>::infinity()); // Set all values that are <= 0 to negative infinity
     torch::Tensor e_x = torch::exp(x - x.max());
     return e_x / e_x.sum();
 }

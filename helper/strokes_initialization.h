@@ -1,7 +1,5 @@
-#ifndef STROKES_INITIALIZATION_H
-#define STROKES_INITIALIZATION_H
-
 #include <iostream>
+#include <random>
 #include <torch/torch.h>
 #include <torch/script.h>
 #include <opencv2/opencv.hpp>
@@ -16,4 +14,4 @@ torch::Tensor get_edge_map(cv::Mat image_input);
 
 torch::Tensor softmax_above_zero(torch::Tensor x);
 
-#endif
+void get_path(torch::Tensor indices, int strokes_counter);

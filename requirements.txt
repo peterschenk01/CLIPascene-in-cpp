@@ -1,5 +1,0 @@
-# To-Do
-libtorch
-pytorch
-cuda
-opencv
