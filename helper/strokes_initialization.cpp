@@ -63,6 +63,9 @@ void strokes_initialization() {
     // Normalize indices
     torch::Tensor indices_normalised = indices / 224;
 
+    // Visualize distribution map and save it to output/distr_map.png
+    visualize_distr_map(distribution_map, row_indices, col_indices, num_strokes);
+
     vector<PathCPP> paths;
     vector<PathGroupCPP> path_groups;
     for(int i = 0; i < num_strokes; i++) {
@@ -82,26 +85,6 @@ void strokes_initialization() {
                                                          args);
 
     cout << rendered_image << endl;
-
-    
-    
-
-
-    /*
-    // Visualize (temp)
-    distribution_map = (distribution_map - distribution_map.min()) / (distribution_map.max() - distribution_map.min()); 
-    cv::Mat temp3(224, 224, CV_32FC1, distribution_map.to(torch::kCPU).data_ptr<float>());
-    temp3.convertTo(temp3, CV_8UC1, 255);
-    cv::applyColorMap(temp3, temp3, cv::COLORMAP_VIRIDIS);
-    for(int i = 0; i < num_strokes; i++) {
-        int row = row_indices[i].item<int>();
-        int col = col_indices[i].item<int>();
-        temp3.at<cv::Vec3b>(row, col)[0] = 0;
-        temp3.at<cv::Vec3b>(row, col)[1] = 0;
-        temp3.at<cv::Vec3b>(row, col)[2] = 255;
-    }
-    cv::imwrite("../temp3.png", temp3);
-    */
 }
 
 // Function to preprocess the image
@@ -272,4 +255,20 @@ torch::Tensor softmax_above_zero(torch::Tensor x) {
     x = torch::where(x > 0, x, -std::numeric_limits<float>::infinity()); // Set all values that are <= 0 to negative infinity
     torch::Tensor e_x = torch::exp(x - x.max());
     return e_x / e_x.sum();
+}
+
+// Visualize distribution map and save it to output/distr_map.png
+void visualize_distr_map(torch::Tensor distribution_map, torch::Tensor row_indices, torch::Tensor col_indices, int num_strokes) {
+    distribution_map = (distribution_map - distribution_map.min()) / (distribution_map.max() - distribution_map.min()); 
+    cv::Mat temp3(224, 224, CV_32FC1, distribution_map.to(torch::kCPU).data_ptr<float>());
+    temp3.convertTo(temp3, CV_8UC1, 255);
+    cv::applyColorMap(temp3, temp3, cv::COLORMAP_VIRIDIS);
+    for(int i = 0; i < num_strokes; i++) {
+        int row = row_indices[i].item<int>();
+        int col = col_indices[i].item<int>();
+        temp3.at<cv::Vec3b>(row, col)[0] = 0;
+        temp3.at<cv::Vec3b>(row, col)[1] = 0;
+        temp3.at<cv::Vec3b>(row, col)[2] = 255;
+    }
+    cv::imwrite("../output/distribution_map.png", temp3);
 }

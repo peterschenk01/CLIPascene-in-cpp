@@ -21,4 +21,6 @@ torch::Tensor softmax_above_zero(torch::Tensor x);
 
 PathCPP get_path(torch::Tensor indices, int strokes_counter);
 
+void visualize_distr_map(torch::Tensor distribution_map, torch::Tensor row_indices, torch::Tensor col_indices, int num_strokes);
+
 #endif
