@@ -6,11 +6,9 @@
 
 using namespace std;
 
-namespace path {
-
-struct Path {
+struct PathCPP {
     // Constructor
-    Path(
+    PathCPP(
         torch::Tensor num_control_points,
         torch::Tensor points,
         bool is_closed,
@@ -33,9 +31,9 @@ struct Path {
     bool use_distance_approx;
 };
 
-struct PathGroup {
+struct PathGroupCPP {
     // Constructor
-    PathGroup(
+    PathGroupCPP(
         torch::Tensor shape_ids,
         bool use_even_odd_rule = true,
         torch::Tensor stroke_color = torch::tensor({0.0, 0.0, 0.0, 1.0}),
@@ -54,7 +52,5 @@ struct PathGroup {
     torch::Tensor shape_to_canvas;
     string id;
 };
-
-}
 
 #endif

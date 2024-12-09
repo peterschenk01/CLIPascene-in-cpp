@@ -5,13 +5,14 @@
 #include <opencv2/opencv.hpp>
 #include "strokes_initialization.h"
 #include "diffvg/cppdiffvg.h"
+#include "diffvg/path.h"
 
 using namespace std;
 using custom_variant = variant<int, bool, torch::Tensor, OutputType, ShapeType, ColorType, FilterType>;
 
 void strokes_initialization() {
-    string model_path = "../models/clip_vit_b32_scripted.pt";
-    string image_path = "../input_images/input_image.png";
+    const string model_path = "../models/clip_vit_b32_scripted.pt";
+    const string image_path = "../input_images/input_image.png";
     torch::jit::script::Module model;
     int num_strokes = 64;
 
@@ -62,22 +63,31 @@ void strokes_initialization() {
     // Normalize indices
     torch::Tensor indices_normalised = indices / 224;
 
-    get_path(indices_normalised, 0);
-
-    vector<custom_variant> vec = RenderFunction::serialize_scene(224, 224, 
-                                                                vector<path::Path>({path::Path(torch::rand({2,2,2}), torch::rand({2, 2, 2}), false)}), 
-                                                                vector<path::PathGroup>({path::PathGroup(torch::rand({2,2,2}))}));
-    
-    for(int i = 0; i < vec.size(); i++) {
-        visit([](auto& x){
-            cout << typeid(x).name() << endl;
-        }, vec[i]);
+    vector<PathCPP> paths;
+    vector<PathGroupCPP> path_groups;
+    for(int i = 0; i < num_strokes; i++) {
+        PathCPP path = get_path(indices_normalised, i);
+        paths.push_back(path);
+        PathGroupCPP path_group = PathGroupCPP(torch::tensor({static_cast<int>(paths.size()) - 1}));
+        path_groups.push_back(path_group);
     }
     
+    vector<custom_variant> args = RenderFunction::serialize_scene(224, 224, paths, path_groups);
+
+    torch::Tensor rendered_image = RenderFunction::apply(224,
+                                                         224,
+                                                         2,
+                                                         2,
+                                                         0,
+                                                         args);
+
+    cout << rendered_image << endl;
+
+    
+    
 
 
-
-
+    /*
     // Visualize (temp)
     distribution_map = (distribution_map - distribution_map.min()) / (distribution_map.max() - distribution_map.min()); 
     cv::Mat temp3(224, 224, CV_32FC1, distribution_map.to(torch::kCPU).data_ptr<float>());
@@ -91,6 +101,7 @@ void strokes_initialization() {
         temp3.at<cv::Vec3b>(row, col)[2] = 255;
     }
     cv::imwrite("../temp3.png", temp3);
+    */
 }
 
 // Function to preprocess the image
@@ -225,7 +236,7 @@ torch::Tensor get_edge_map(cv::Mat image_input) {
     return xdog_tensor;
 }
 
-void get_path(torch::Tensor indices, int strokes_counter) {
+PathCPP get_path(torch::Tensor indices, int strokes_counter) {
     torch::Tensor inds = indices.clone();
     float radius = 0.05f;
     // Random number generator
@@ -245,6 +256,15 @@ void get_path(torch::Tensor indices, int strokes_counter) {
     }
 
     points = points * 224;
+
+    torch::Tensor num_control_points = torch::zeros({4}, torch::kInt32) + 2;
+    PathCPP path = PathCPP( num_control_points,
+                            points,
+                            false,              // is_closed
+                            torch::tensor(1.5)  // stroke_width
+                            );
+
+    return path;
 }
 
 // Softmax given tensor but only consider values above zero

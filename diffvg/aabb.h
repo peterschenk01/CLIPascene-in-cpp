@@ -5,6 +5,18 @@
 #include "vector.h"
 #include "matrix.h"
 
+template <typename T>
+DEVICE
+inline T custom_max(const T &a, const T &b) {
+    return a > b ? a : b;
+}
+
+template <typename T>
+DEVICE
+inline T custom_min(const T &a, const T &b) {
+    return a < b ? a : b;
+}
+
 struct AABB {
     DEVICE
     inline AABB(const Vector2f &p_min = Vector2f{infinity<float>(), infinity<float>()},
@@ -16,15 +28,15 @@ struct AABB {
 DEVICE
 inline
 AABB merge(const AABB &box, const Vector2f &p) {
-    return AABB{Vector2f{min(p.x, box.p_min.x), min(p.y, box.p_min.y)},
-                Vector2f{max(p.x, box.p_max.x), max(p.y, box.p_max.y)}};
+    return AABB{Vector2f{custom_min(p.x, box.p_min.x), custom_min(p.y, box.p_min.y)},
+                Vector2f{custom_max(p.x, box.p_max.x), custom_max(p.y, box.p_max.y)}};
 }
 
 DEVICE
 inline
 AABB merge(const AABB &box0, const AABB &box1) {
-    return AABB{Vector2f{min(box0.p_min.x, box1.p_min.x), min(box0.p_min.y, box1.p_min.y)},
-                Vector2f{max(box0.p_max.x, box1.p_max.x), max(box0.p_max.y, box1.p_max.y)}};
+    return AABB{Vector2f{custom_min(box0.p_min.x, box1.p_min.x), custom_min(box0.p_min.y, box1.p_min.y)},
+                Vector2f{custom_max(box0.p_max.x, box1.p_max.x), custom_max(box0.p_max.y, box1.p_max.y)}};
 }
 
 DEVICE

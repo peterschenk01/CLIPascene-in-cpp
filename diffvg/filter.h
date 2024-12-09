@@ -11,6 +11,8 @@ enum class FilterType {
 };
 
 struct Filter {
+    Filter(FilterType type, float radius): type(type), radius(radius) {}
+    
     FilterType type;
     float radius;
 };

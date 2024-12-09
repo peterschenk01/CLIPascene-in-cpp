@@ -782,6 +782,14 @@ float det(const Vector2f &a, const Vector2f &b) {
     return a.x*b.y-b.x*a.y;
 }
 
+template <typename T>
+DEVICE
+inline T custom_clamp(const T &v, const T &lo, const T &hi) {
+    if (v < lo) return lo;
+    else if (v > hi) return hi;
+    else return v;
+}
+
 DEVICE
 inline
 Vector2f quadratic_closest_pt_approx(const Vector2f &b0,
@@ -797,7 +805,7 @@ Vector2f quadratic_closest_pt_approx(const Vector2f &b0,
     Vector2f pp=-f*gf/dot(gf,gf);
     Vector2f d0p=b0-pp;
     float ap=det(d0p,d20), bp=2*det(d10,d0p);
-    float t=clamp((ap+bp)/(2*a+b+d),0.f,1.f);
+    float t=custom_clamp((ap+bp)/(2*a+b+d),0.f,1.f);
     float tt = 1 - t;
     if (t_ != nullptr) {
         *t_ = t;
