@@ -5,12 +5,14 @@
 #include "ptr.h"
 
 enum class ColorType {
-    Constant,
-    LinearGradient,
-    RadialGradient
+    Constant = 1,
+    LinearGradient = 2,
+    RadialGradient = 3
 };
 
 struct Constant {
+    Constant(Vector4f color): color(color) {}
+    
     Vector4f color;
 
     ptr<void> get_ptr() {

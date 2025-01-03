@@ -4,10 +4,10 @@
 #include "atomic.h"
 
 enum class FilterType {
-    Box,
-    Tent,
-    RadialParabolic, // 4/3(1 - (d/r))
-    Hann // https://en.wikipedia.org/wiki/Window_function#Hann_and_Hamming_windows
+    Box = 1,
+    Tent = 2,
+    RadialParabolic = 3, // 4/3(1 - (d/r))
+    Hann = 4// https://en.wikipedia.org/wiki/Window_function#Hann_and_Hamming_windows
 };
 
 struct Filter {

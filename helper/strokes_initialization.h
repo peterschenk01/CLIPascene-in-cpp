@@ -6,8 +6,8 @@
 #include <torch/torch.h>
 #include <torch/script.h>
 #include <opencv2/opencv.hpp>
-#include "diffvg/cppdiffvg.h"
-#include "diffvg/path.h"
+#include "cppdiffvg/cppdiffvg.h"
+#include "cppdiffvg/path.h"
 
 void strokes_initialization();
 

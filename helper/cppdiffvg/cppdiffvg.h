@@ -15,7 +15,7 @@
 
 using namespace std;
 
-enum class OutputType {
+enum struct OutputType{
     color = 1,
     sdf = 2
 };
@@ -28,7 +28,7 @@ public:
                                                   int canvas_height,
                                                   vector<PathCPP> paths,
                                                   vector<PathGroupCPP> path_groups,
-                                                  PixelFilter filter = PixelFilter(FilterType::Box, torch::tensor(0.5)),
+                                                  PixelFilter filter = PixelFilter(FilterType::Box, torch::tensor({0.5})),
                                                   OutputType output_type = OutputType::color,
                                                   bool use_prefiltering = false,
                                                   torch::Tensor eval_positions = torch::tensor({})

@@ -17,13 +17,25 @@ find_package(OpenCV REQUIRED)
 # DiffVG
 include_directories(diffvg)
 set(CMAKE_BUILD_RPATH "${CMAKE_SOURCE_DIR}/libdiffvg.so")
+set(diffvg_src
+    diffvg/shape.cpp)
 
+# CPPDiffvg
 set(cppdiffvg_src
-    helper/diffvg/cppdiffvg.cpp
-    helper/diffvg/cppdiffvg.h
-    helper/diffvg/pixel_filter.h
-    helper/diffvg/path.h)
+    helper/cppdiffvg/cppdiffvg.cpp
+    helper/cppdiffvg/save_svg.cpp
+    helper/cppdiffvg/cppdiffvg.h
+    helper/cppdiffvg/save_svg.h
+    helper/cppdiffvg/pixel_filter.h
+    helper/cppdiffvg/path.h)
 
+# TinyXML-2
+include_directories(tinyxml2)
+set(tinyxml2_src
+    tinyxml2/tinyxml2.cpp
+    tinyxml2/tinyxml2.h)
+
+# CLIPascene
 set(clipascene_src
     clipascene.cpp
     helper/strokes_initialization.cpp
@@ -33,6 +45,8 @@ set(clipascene_src
 add_executable(clipascene 
     ${clipascene_src}
     ${cppdiffvg_src}
+    ${diffvg_src}
+    ${tinyxml2_src}
 )
 
 target_link_libraries(clipascene 

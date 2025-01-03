@@ -4,8 +4,9 @@
 #include <torch/script.h>
 #include <opencv2/opencv.hpp>
 #include "strokes_initialization.h"
-#include "diffvg/cppdiffvg.h"
-#include "diffvg/path.h"
+#include "cppdiffvg/cppdiffvg.h"
+#include "cppdiffvg/path.h"
+#include "cppdiffvg/save_svg.h"
 
 using namespace std;
 using custom_variant = variant<int, bool, torch::Tensor, OutputType, ShapeType, ColorType, FilterType>;
@@ -50,16 +51,16 @@ void strokes_initialization() {
     torch::Tensor distribution_map = attn_map * edge_map;
     // Softmax only values above zero
     distribution_map = softmax_above_zero(distribution_map);
-
     // Convert to 1D Tensor
     torch::Tensor distr_flat = distribution_map.flatten(); 
+
     // Sample indices
-    torch::Tensor indices = torch::multinomial(distr_flat, num_strokes, false); 
+    torch::Tensor indices = torch::multinomial(distr_flat, num_strokes, false);
     // Convert indices to a 2D Tensor of shape [num_strokes, 2]
     auto distr_shape = distribution_map.sizes()[1];
-    torch::Tensor row_indices = (indices / distr_shape).to(torch::kInt32);
-    torch::Tensor col_indices = (indices % distr_shape).to(torch::kInt32);
-    indices = torch::stack({row_indices, col_indices}, 1);
+    torch::Tensor row_indices = (indices / distr_shape).to(torch::kInt32); // y coordinates
+    torch::Tensor col_indices = (indices % distr_shape).to(torch::kInt32); // x coordinates
+    indices = torch::stack({col_indices, row_indices}, 1); // shape [num_strokes, 2] with points (x, y)
     // Normalize indices
     torch::Tensor indices_normalised = indices / 224;
 
@@ -74,17 +75,29 @@ void strokes_initialization() {
         PathGroupCPP path_group = PathGroupCPP(torch::tensor({static_cast<int>(paths.size()) - 1}));
         path_groups.push_back(path_group);
     }
+
+    for(auto path : paths) {
+        path.points.requires_grad_();
+        path.stroke_width.requires_grad_();
+    }
+    for(auto group : path_groups) {
+        group.stroke_color.requires_grad_();
+    }
+
+    save_svg("../output/test.svg", 224, 224, paths);
     
     vector<custom_variant> args = RenderFunction::serialize_scene(224, 224, paths, path_groups);
 
-    torch::Tensor rendered_image = RenderFunction::apply(224,
-                                                         224,
-                                                         2,
-                                                         2,
-                                                         0,
-                                                         args);
+    torch::Tensor rendered_image = RenderFunction::apply(224,   // width
+                                                         224,   // height
+                                                         2,     // num_samples_x
+                                                         2,     // num_samples_y
+                                                         0,     // seed
+                                                         args
+                                                         );
 
-    cout << rendered_image << endl;
+    auto loss = (rendered_image - 2.0f).pow(2).mean();
+    // loss.backward();
 }
 
 // Function to preprocess the image
@@ -219,8 +232,8 @@ torch::Tensor get_edge_map(cv::Mat image_input) {
     return xdog_tensor;
 }
 
-PathCPP get_path(torch::Tensor indices, int strokes_counter) {
-    torch::Tensor inds = indices.clone();
+PathCPP get_path(torch::Tensor indices_normalised, int strokes_counter) {
+    torch::Tensor inds = indices_normalised.clone();
     float radius = 0.05f;
     // Random number generator
     random_device dev;
@@ -239,12 +252,14 @@ PathCPP get_path(torch::Tensor indices, int strokes_counter) {
     }
 
     points = points * 224;
+    points = points.clamp(0, 224);
 
-    torch::Tensor num_control_points = torch::zeros({4}, torch::kInt32) + 2;
+    torch::Tensor num_control_points = torch::tensor({2}, torch::kInt32);
+
     PathCPP path = PathCPP( num_control_points,
                             points,
-                            false,              // is_closed
-                            torch::tensor(1.5)  // stroke_width
+                            false,                  // is_closed
+                            torch::tensor({1.5})    // stroke_width
                             );
 
     return path;
@@ -257,15 +272,15 @@ torch::Tensor softmax_above_zero(torch::Tensor x) {
     return e_x / e_x.sum();
 }
 
-// Visualize distribution map and save it to output/distr_map.png
+// Visualize distribution map and save it to output/distribution_map.png
 void visualize_distr_map(torch::Tensor distribution_map, torch::Tensor row_indices, torch::Tensor col_indices, int num_strokes) {
     distribution_map = (distribution_map - distribution_map.min()) / (distribution_map.max() - distribution_map.min()); 
     cv::Mat temp3(224, 224, CV_32FC1, distribution_map.to(torch::kCPU).data_ptr<float>());
     temp3.convertTo(temp3, CV_8UC1, 255);
     cv::applyColorMap(temp3, temp3, cv::COLORMAP_VIRIDIS);
     for(int i = 0; i < num_strokes; i++) {
-        int row = row_indices[i].item<int>();
-        int col = col_indices[i].item<int>();
+        int row = row_indices.index({i}).item<int>();
+        int col = col_indices.index({i}).item<int>();
         temp3.at<cv::Vec3b>(row, col)[0] = 0;
         temp3.at<cv::Vec3b>(row, col)[1] = 0;
         temp3.at<cv::Vec3b>(row, col)[2] = 255;
