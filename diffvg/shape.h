@@ -7,10 +7,10 @@
 #include "matrix.h"
 
 enum class ShapeType {
-    Circle = 1,
-    Ellipse = 2,
-    Path = 3,
-    Rect =4
+    Circle,
+    Ellipse,
+    Path,
+    Rect
 };
 
 struct Circle {

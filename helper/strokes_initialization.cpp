@@ -6,7 +6,7 @@
 #include "strokes_initialization.h"
 #include "cppdiffvg/cppdiffvg.h"
 #include "cppdiffvg/path.h"
-#include "cppdiffvg/save_svg.h"
+#include "cppdiffvg/save_image.h"
 
 using namespace std;
 using custom_variant = variant<int, bool, torch::Tensor, OutputType, ShapeType, ColorType, FilterType>;
@@ -84,11 +84,13 @@ void strokes_initialization() {
         group.stroke_color.requires_grad_();
     }
 
-    save_svg("../output/test.svg", 224, 224, paths);
+    save_svg("../output/strokes_init.svg", 224, 224, paths);
     
     vector<custom_variant> args = RenderFunction::serialize_scene(224, 224, paths, path_groups);
 
-    torch::Tensor rendered_image = RenderFunction::apply(224,   // width
+    torch::Tensor input = torch::tensor({1.0f}, torch::kCUDA).set_requires_grad(true);
+    torch::Tensor rendered_image = RenderFunction::apply(input,
+                                                         224,   // width
                                                          224,   // height
                                                          2,     // num_samples_x
                                                          2,     // num_samples_y
@@ -96,8 +98,27 @@ void strokes_initialization() {
                                                          args
                                                          );
 
+    save_png("../output/strokes_init.png", rendered_image);
+
+    cout << rendered_image.grad_fn()->name() << endl;
+    cout << rendered_image.requires_grad() << endl;
+
     auto loss = (rendered_image - 2.0f).pow(2).mean();
-    // loss.backward();
+    print_grad_fn(loss.grad_fn(), 0);
+    loss.backward();
+}
+
+void print_grad_fn(const std::shared_ptr<torch::autograd::Node>& node, int level) {
+    if (!node) return;
+
+    // Indentation for hierarchy visualization
+    std::string indent(level * 2, ' ');
+    std::cout << indent << "Grad function: " << node->name() << std::endl;
+
+    // Traverse next edges in the graph
+    for (const auto& edge : node->next_edges()) {
+        print_grad_fn(edge.function, level + 1);
+    }
 }
 
 // Function to preprocess the image

@@ -92,6 +92,7 @@ vector<custom_variant> RenderFunction::serialize_scene(int canvas_width,
 
 // Forward rendering pass
 torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
+                                      torch::Tensor input,
                                       int width,
                                       int height,
                                       int num_samples_x,
@@ -335,17 +336,17 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
     ctx->saved_data["num_shapes"] = num_shapes;
     ctx->saved_data["num_control_points_contents"] = num_control_points_contents;
     ctx->saved_data["points_contents"] = points_contents;
-    ctx->saved_data["is_closed_contents"] = is_closed_contents;
-    ctx->saved_data["use_distance_approx_contents"] = use_distance_approx_contents;
-    ctx->saved_data["shape_type_contents"] = shape_type_contents;
+    ctx->saved_data["is_closed_contents"] = torch::tensor(is_closed_contents, torch::kInt32);
+    ctx->saved_data["use_distance_approx_contents"] = torch::tensor(use_distance_approx_contents, torch::kInt32);
+    ctx->saved_data["shape_type_contents"] = torch::tensor(shape_type_contents, torch::kInt32);
     ctx->saved_data["stroke_width_contents"] = stroke_width_contents;
 
     // ShapeGroups
     ctx->saved_data["num_shape_groups"] = num_shape_groups;
     ctx->saved_data["shape_ids_contents"] = shape_ids_contents;
-    ctx->saved_data["stroke_color_type_contents"] = stroke_color_type_contents;
+    ctx->saved_data["stroke_color_type_contents"] = torch::tensor(stroke_color_type_contents, torch::kInt32);
     ctx->saved_data["stroke_color_contents"] = stroke_color_contents;
-    ctx->saved_data["use_even_odd_rule_contents"] = use_even_odd_rule_contents;
+    ctx->saved_data["use_even_odd_rule_contents"] = torch::tensor(use_even_odd_rule_contents, torch::kInt32);
     ctx->saved_data["shape_to_canvas_contents"] = shape_to_canvas_contents;
 
     // Filter
@@ -357,12 +358,12 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
     ctx->saved_data["num_samples_x"] = num_samples_x;
     ctx->saved_data["num_samples_y"] = num_samples_y;
     ctx->saved_data["seed"] = seed;
-    ctx->saved_data["output_type"] = static_cast<int>(output_type);
+    ctx->saved_data["output_type_int"] = static_cast<int>(output_type);
     ctx->saved_data["use_prefiltering"] = use_prefiltering;
     ctx->saved_data["eval_positions"] = eval_positions;
     ctx->saved_data["background_image"] = 0;
 
-    return rendered_image;
+    return rendered_image * input;
 }
 
 torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradContext *ctx,
@@ -383,17 +384,17 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
     auto num_shapes = ctx->saved_data["num_shapes"].toInt();
     auto num_control_points_contents = ctx->saved_data["num_control_points_contents"].toTensorVector();
     auto points_contents = ctx->saved_data["points_contents"].toTensorVector();
-    auto is_closed_contents = ctx->saved_data["is_closed_contents"].toIntVector();
-    auto use_distance_approx_contents = ctx->saved_data["use_distance_approx_contents"].toIntVector();
-    auto shape_type_contents = ctx->saved_data["shape_type_contents"].toIntVector();
+    auto is_closed_contents = ctx->saved_data["is_closed_contents"].toTensor();
+    auto use_distance_approx_contents = ctx->saved_data["use_distance_approx_contents"].toTensor();
+    auto shape_type_contents = ctx->saved_data["shape_type_contents"].toTensor();
     auto stroke_width_contents = ctx->saved_data["stroke_width_contents"].toTensorVector();
 
     // ShapeGroups
     auto num_shape_groups = ctx->saved_data["num_shape_groups"].toInt();
     auto shape_ids_contents = ctx->saved_data["shape_ids_contents"].toTensorVector();
-    auto stroke_color_type_contents = ctx->saved_data["stroke_color_type_contents"].toIntVector();
+    auto stroke_color_type_contents = ctx->saved_data["stroke_color_type_contents"].toTensor();
     auto stroke_color_contents = ctx->saved_data["stroke_color_contents"].toTensorVector();
-    auto use_even_odd_rule_contents = ctx->saved_data["use_even_odd_rule_contents"].toIntVector();
+    auto use_even_odd_rule_contents = ctx->saved_data["use_even_odd_rule_contents"].toTensor();
     auto shape_to_canvas_contents = ctx->saved_data["shape_to_canvas_contents"].toTensorVector();
 
     // Filter
@@ -405,15 +406,15 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
     auto num_samples_x = ctx->saved_data["num_samples_x"].toInt();
     auto num_samples_y = ctx->saved_data["num_samples_y"].toInt();
     auto seed = ctx->saved_data["seed"].toInt();
-    auto output_type_int = ctx->saved_data["output_type"].toInt();
+    auto output_type_int = ctx->saved_data["output_type_int"].toInt();
     auto use_prefiltering = ctx->saved_data["use_prefiltering"].toBool();
     auto eval_positions = ctx->saved_data["eval_positions"].toTensor();
     auto background_image = ctx->saved_data["background_image"];
 
     OutputType output_type;
-    if(output_type_int == 1)
+    if(output_type_int == 0)
         output_type = OutputType::color;
-    else if(output_type_int == 2)
+    else if(output_type_int == 1)
         output_type = OutputType::sdf;
     else
         assert(false);
@@ -429,18 +430,18 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
                                   nullptr, // because thickness is false
                                   static_cast<int>(num_control_points_contents[i].size(0)),
                                   static_cast<int>(points_contents[i].size(0)),
-                                  is_closed_contents[i],
-                                  use_distance_approx_contents[i]
+                                  is_closed_contents.index({i}).item<bool>(),
+                                  use_distance_approx_contents.index({i}).item<bool>()
                                   );
 
         ShapeType shape_type;
-        if(shape_type_contents[i] == 1)
+        if(shape_type_contents.index({i}).item<int>() == 0)
             shape_type = ShapeType::Circle;
-        else if(shape_type_contents[i] == 2)
+        else if(shape_type_contents.index({i}).item<int>() == 1)
             shape_type = ShapeType::Ellipse;
-        else if(shape_type_contents[i] == 3)
+        else if(shape_type_contents.index({i}).item<int>() == 2)
             shape_type = ShapeType::Path;
-        else if(shape_type_contents[i] == 4)
+        else if(shape_type_contents.index({i}).item<int>() == 3)
             shape_type = ShapeType::Rect;
         else
             assert(false);
@@ -455,11 +456,11 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
 
     for(int i = 0; i < num_shape_groups; i++) {
         ColorType stroke_color_type;
-        if(stroke_color_type_contents[i] == 1)
+        if(stroke_color_type_contents.index({i}).item<int>() == 0)
             stroke_color_type = ColorType::Constant;
-        else if(stroke_color_type_contents[i] == 2)
+        else if(stroke_color_type_contents.index({i}).item<int>() == 1)
             stroke_color_type = ColorType::LinearGradient;
-        else if(stroke_color_type_contents[i] == 3)
+        else if(stroke_color_type_contents.index({i}).item<int>() == 2)
             stroke_color_type = ColorType::RadialGradient;
         else
             assert(false);
@@ -476,7 +477,7 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
                                                        nullptr,
                                                        stroke_color_type,
                                                        stroke_color->get_ptr(),
-                                                       use_even_odd_rule_contents[i],
+                                                       use_even_odd_rule_contents.index({i}).item<bool>(),
                                                        shape_to_canvas_contents[i].data_ptr<float>()
                                                        );
 
@@ -485,13 +486,13 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
     }
 
     FilterType filter_type;
-    if(filter_type_int == 1)
+    if(filter_type_int == 0)
         filter_type = FilterType::Box;
-    else if(filter_type_int == 2)
+    else if(filter_type_int == 1)
         filter_type = FilterType::Tent;
-    else if(filter_type_int == 3)
+    else if(filter_type_int == 2)
         filter_type = FilterType::RadialParabolic;
-    else if(filter_type_int == 4)
+    else if(filter_type_int == 3)
         filter_type = FilterType::Hann;
     else
         assert(false);

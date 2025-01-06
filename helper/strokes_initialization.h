@@ -8,6 +8,7 @@
 #include <opencv2/opencv.hpp>
 #include "cppdiffvg/cppdiffvg.h"
 #include "cppdiffvg/path.h"
+#include "cppdiffvg/save_image.h"
 
 void strokes_initialization();
 
@@ -22,5 +23,7 @@ torch::Tensor softmax_above_zero(torch::Tensor x);
 PathCPP get_path(torch::Tensor indices, int strokes_counter);
 
 void visualize_distr_map(torch::Tensor distribution_map, torch::Tensor row_indices, torch::Tensor col_indices, int num_strokes);
+
+void print_grad_fn(const std::shared_ptr<torch::autograd::Node>& node, int level = 0);
 
 #endif

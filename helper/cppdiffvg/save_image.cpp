@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <torch/torch.h>
+#include <opencv2/opencv.hpp>
 #include "tinyxml2.h"
 #include "path.h"
 
@@ -67,23 +68,18 @@ void save_svg(const string filename,
     }
 }
 
-/*
-
-    // Add shapes to the group
-    for (size_t i = 0; i < shapeGroups.size(); ++i) {
-        const auto& shape = shapes[shapeGroups[i]->shapeIds[0]];
-        XMLElement* shapeNode = nullptr;
-        } else if (auto path = dynamic_cast<Path*>(shape.get())) {
-            shapeNode = doc.NewElement("path");
-            shapeNode->SetAttribute("d", path->toSVGPath().c_str());
-        }
-
-        if (shapeNode) {
-            g->InsertEndChild(shapeNode);
-        }
+void save_png(const string filename, torch::Tensor input) {
+    torch::Tensor img = input.clone().contiguous().cpu().detach();
+    auto alpha = img.slice(2, 3, 4);
+    auto rgb = img.slice(2, 0, 3);
+    auto ones = torch::ones({img.size(0), img.size(1), 3});
+    auto result = alpha * rgb + ones * (1 - alpha);
+    result = result.clamp(0, 1);
+    cv::Mat image(224, 224, CV_32FC3, result.data_ptr<float>());
+    image.convertTo(image, CV_8UC3, 255);
+    if(cv::imwrite(filename, image)) {
+        cout << "PNG file saved successfully!" << endl;
+    } else {
+        cout << "Error saving PNG file" << endl;
     }
-
-    // Save to file
-    doc.SaveFile(filename.c_str());
 }
-*/

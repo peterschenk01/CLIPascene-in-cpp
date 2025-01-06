@@ -16,8 +16,8 @@
 using namespace std;
 
 enum struct OutputType{
-    color = 1,
-    sdf = 2
+    color,
+    sdf
 };
 
 class RenderFunction : public torch::autograd::Function<RenderFunction> {
@@ -35,6 +35,7 @@ public:
                                                   );
 
 static torch::Tensor forward(torch::autograd::AutogradContext *ctx,
+                             torch::Tensor input,
                              int width,
                              int height,
                              int num_samples_x,

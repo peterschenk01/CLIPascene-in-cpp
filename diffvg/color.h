@@ -5,9 +5,9 @@
 #include "ptr.h"
 
 enum class ColorType {
-    Constant = 1,
-    LinearGradient = 2,
-    RadialGradient = 3
+    Constant,
+    LinearGradient,
+    RadialGradient
 };
 
 struct Constant {

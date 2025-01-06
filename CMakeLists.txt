@@ -23,9 +23,9 @@ set(diffvg_src
 # CPPDiffvg
 set(cppdiffvg_src
     helper/cppdiffvg/cppdiffvg.cpp
-    helper/cppdiffvg/save_svg.cpp
+    helper/cppdiffvg/save_image.cpp
     helper/cppdiffvg/cppdiffvg.h
-    helper/cppdiffvg/save_svg.h
+    helper/cppdiffvg/save_image.h
     helper/cppdiffvg/pixel_filter.h
     helper/cppdiffvg/path.h)
 
