@@ -10,6 +10,7 @@
 using namespace std;
 using namespace tinyxml2;
 
+// Save render as svg similar to save_svg.py from pydiffvg but without checking for other shape types since I only need paths.
 void save_svg(const string filename,
               int width,
               int height,
@@ -62,12 +63,13 @@ void save_svg(const string filename,
     XMLError result = doc.SaveFile(filename.c_str());
 
     if (result == XML_SUCCESS) {
-        printf("SVG file saved successfully!\n");
+        printf("Strokes initialization successfully saved as svg\n");
     } else {
-        printf("Error saving SVG file: %d\n", result);
+        printf("Error saving strokes initialization as svg: %d\n", result);
     }
 }
 
+// Cuts out alpha channel, pastes onto white background and saves image as png. Input is rendered_image.
 void save_png(const string filename, torch::Tensor input) {
     torch::Tensor img = input.clone().contiguous().cpu().detach();
     auto alpha = img.slice(2, 3, 4);
@@ -78,8 +80,8 @@ void save_png(const string filename, torch::Tensor input) {
     cv::Mat image(224, 224, CV_32FC3, result.data_ptr<float>());
     image.convertTo(image, CV_8UC3, 255);
     if(cv::imwrite(filename, image)) {
-        cout << "PNG file saved successfully!" << endl;
+        cout << "Strokes initialization successfully saved as png" << endl;
     } else {
-        cout << "Error saving PNG file" << endl;
+        cout << "Error saving strokes initialization as png" << endl;
     }
 }

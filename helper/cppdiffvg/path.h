@@ -6,6 +6,8 @@
 
 using namespace std;
 
+/* C++ partial implementation of shape.py from pydiffvg. */
+
 struct PathCPP {
     // Constructor
     PathCPP(

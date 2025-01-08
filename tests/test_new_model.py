@@ -1,13 +1,15 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import CLIP.clip as clip
+import CLIP.clip as clip # CLIP from official CLIP Github
 from torchvision import transforms
 import torch
 from PIL import Image
 import PIL
 import numpy as np
 import matplotlib.pyplot as plt
+
+""" Test file for CLIP model as it currently is from the official CLIP Github. """
 
 # torch.set_printoptions(threshold=torch.inf)
 # np.set_printoptions(threshold=np.inf)

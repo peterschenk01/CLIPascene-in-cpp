@@ -6,6 +6,8 @@
 #include "diffvg.h"
 #include "filter.h"
 
+/* C++ implementation of pixel_filter.py from pydiffvg. */
+
 struct PixelFilter {
     // Constructor
     PixelFilter(FilterType type, torch::Tensor radius = torch::tensor(0.5)) 

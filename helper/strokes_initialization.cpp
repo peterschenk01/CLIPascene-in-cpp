@@ -15,25 +15,20 @@ void strokes_initialization() {
     const string model_path = "../models/clip_vit_b32_scripted.pt";
     const string image_path = "../input_images/input_image.png";
     torch::jit::script::Module model;
-    int num_strokes = 64;
+    int num_strokes = 64; // 64 strokes/paths
 
-    // Load the model
+    // Load the model and move to GPU
     try {
         model = torch::jit::load(model_path);
     } catch (const c10::Error& e) {
         cerr << "Error loading the model: " << e.what() << endl;
         return;
     }
-
-    // Move model to GPU
     model.to(torch::kCUDA);
-
     cout << "Successfully loaded the model and moved to GPU" << endl;
 
     // Load image
     cv::Mat image = cv::imread(image_path);
-
-    // Check if the image was loaded successfully
     if (image.empty()) {
         throw runtime_error("Error: Could not load image from " + image_path);
     }
@@ -41,32 +36,39 @@ void strokes_initialization() {
     // Convert image into a tensor that can be used by the CLIP model
     torch::Tensor image_input = preprocess_image(image).to(torch::kCUDA);
 
-    // Get attention map
+    // Get attention map and save it
     torch::Tensor attn_map = get_attention_map(image_input, model).to(torch::kCUDA);
+    save_attn_map("../output/attention_map.png", attn_map);
 
-    // Get edge map
+    // Get edge map and save it
     torch::Tensor edge_map = get_edge_map(image).to(torch::kCUDA);
+    save_edge_map("../output/edge_map.png", edge_map);
 
     // Get distribution map by multiplying the attention map with the edge map
     torch::Tensor distribution_map = attn_map * edge_map;
+
     // Softmax only values above zero
     distribution_map = softmax_above_zero(distribution_map);
+
     // Convert to 1D Tensor
     torch::Tensor distr_flat = distribution_map.flatten(); 
 
     // Sample indices
     torch::Tensor indices = torch::multinomial(distr_flat, num_strokes, false);
+
     // Convert indices to a 2D Tensor of shape [num_strokes, 2]
     auto distr_shape = distribution_map.sizes()[1];
     torch::Tensor row_indices = (indices / distr_shape).to(torch::kInt32); // y coordinates
     torch::Tensor col_indices = (indices % distr_shape).to(torch::kInt32); // x coordinates
     indices = torch::stack({col_indices, row_indices}, 1); // shape [num_strokes, 2] with points (x, y)
+
     // Normalize indices
     torch::Tensor indices_normalised = indices / 224;
 
-    // Visualize distribution map and save it to output/distr_map.png
-    visualize_distr_map(distribution_map, row_indices, col_indices, num_strokes);
+    // Visualize distribution map and save it
+    save_distr_map("../output/distribution_map.png", distribution_map, row_indices, col_indices, num_strokes);
 
+    // Get path shapes for sampled indices and create path groups
     vector<PathCPP> paths;
     vector<PathGroupCPP> path_groups;
     for(int i = 0; i < num_strokes; i++) {
@@ -76,19 +78,23 @@ void strokes_initialization() {
         path_groups.push_back(path_group);
     }
 
+    // Set requires_grad for needed tensors
     for(auto path : paths) {
-        path.points.requires_grad_();
-        path.stroke_width.requires_grad_();
+        path.points.set_requires_grad(true);
+        path.stroke_width.set_requires_grad(true);
     }
     for(auto group : path_groups) {
-        group.stroke_color.requires_grad_();
+        group.stroke_color.set_requires_grad(true);
     }
 
     save_svg("../output/strokes_init.svg", 224, 224, paths);
     
+    // Get arguments based on paths and path groups for the forward pass
     vector<custom_variant> args = RenderFunction::serialize_scene(224, 224, paths, path_groups);
 
-    torch::Tensor input = torch::tensor({1.0f}, torch::kCUDA).set_requires_grad(true);
+    // Dummy tensor to be multiplied with rendered_image in forward pass so rendered_image gets properly attached to computation graph
+    torch::Tensor input = torch::tensor({1.0f}, torch::kCUDA).set_requires_grad(true); 
+    // Forward rendering pass of diffvg
     torch::Tensor rendered_image = RenderFunction::apply(input,
                                                          224,   // width
                                                          224,   // height
@@ -97,41 +103,27 @@ void strokes_initialization() {
                                                          0,     // seed
                                                          args
                                                          );
+    // Input is not needed further
+    input.set_requires_grad(false);
 
     save_png("../output/strokes_init.png", rendered_image);
 
-    cout << rendered_image.grad_fn()->name() << endl;
-    cout << rendered_image.requires_grad() << endl;
-
+    // Dummy loss for test purposes
     auto loss = (rendered_image - 2.0f).pow(2).mean();
-    print_grad_fn(loss.grad_fn(), 0);
     loss.backward();
 }
 
-void print_grad_fn(const std::shared_ptr<torch::autograd::Node>& node, int level) {
-    if (!node) return;
-
-    // Indentation for hierarchy visualization
-    std::string indent(level * 2, ' ');
-    std::cout << indent << "Grad function: " << node->name() << std::endl;
-
-    // Traverse next edges in the graph
-    for (const auto& edge : node->next_edges()) {
-        print_grad_fn(edge.function, level + 1);
-    }
-}
-
-// Function to preprocess the image
+// Function to preprocess the image for CLIP model
 torch::Tensor preprocess_image(cv::Mat image_input) {
     cv::Mat image = image_input.clone();
 
     // Convert image to RGB
     if (image.channels() == 3) {
-        cv::cvtColor(image, image, cv::COLOR_BGR2RGB); // Image is in BGR format, convert to RGB
+        cv::cvtColor(image, image, cv::COLOR_BGR2RGB); // BGR to RGB
     } else if (image.channels() == 4) {
-        cv::cvtColor(image, image, cv::COLOR_BGRA2RGB); // Image is in BGRA format, convert to RGB
+        cv::cvtColor(image, image, cv::COLOR_BGRA2RGB); // BGRA to RGB
     } else if (image.channels() == 1) {
-        cv::cvtColor(image, image, cv::COLOR_GRAY2RGB); // If grayscale, convert to RGB by replicating the single channel
+        cv::cvtColor(image, image, cv::COLOR_GRAY2RGB); // Grayscale to RGB by replicating the single channel
     } else {
         throw invalid_argument("Unsupported image format: must be 1, 3, or 4 channels.");
     }
@@ -154,7 +146,7 @@ torch::Tensor preprocess_image(cv::Mat image_input) {
     // Permute to [B, C, H, W] Format
     img_tensor = img_tensor.permute({0, 3, 1, 2});
 
-    // Normalize
+    // Normalize for CLIP model
     img_tensor = torch::data::transforms::Normalize<>(
         {0.48145466, 0.4578275, 0.40821073},  // Mean for CLIP
         {0.26862954, 0.26130258, 0.27577711}  // Std deviation for CLIP
@@ -183,13 +175,14 @@ torch::Tensor get_attention_map(torch::Tensor image_input, torch::jit::script::M
     torch::Tensor attn_map;
     attn_map = torch::cat(attns); // Concatenate into single Tensor [12, 50, 50]
     attn_map = attn_map.index({torch::indexing::Slice(), 0, torch::indexing::Slice(1, torch::indexing::None)}); // [12, 1, 49]
-    attn_map = attn_map.mean(0).unsqueeze(0); // Average the 12 maps
-    attn_map = attn_map.reshape({1, 1, 7, 7});
+    attn_map = attn_map.mean(0).unsqueeze(0); // Average the 12 maps and add dimension [1, 1, 1, 49]
+    attn_map = attn_map.reshape({1, 1, 7, 7}); // [1, 1, 7, 7]
+    // Upscale to [1, 1, 224, 224]
     attn_map = torch::nn::functional::interpolate(
         attn_map, 
         torch::nn::functional::InterpolateFuncOptions().size(vector<int64_t>{224, 224}).mode(torch::kBicubic).align_corners(false)
         );
-    attn_map = attn_map.reshape({224, 224});
+    attn_map = attn_map.reshape({224, 224}); // [224, 224]
     attn_map = attn_map.toType(torch::kFloat32);
     
     // Normalize
@@ -211,15 +204,18 @@ torch::Tensor get_edge_map(cv::Mat image_input) {
     // Grayscale image
     cv::cvtColor(image, image, cv::COLOR_BGR2GRAY);
 
+    // Apply GaussianBlur 2 times
     cv::Mat blurred1, blurred2;
     cv::GaussianBlur(image, blurred1, cv::Size(0, 0), sigma);
     cv::GaussianBlur(image, blurred2, cv::Size(0, 0), sigma * k);
 
+    // Difference of Gaussians (DoG)
     cv::Mat xdog = blurred1 - (gamma * blurred2);
 
     // Convert to Float32 and normalize
     xdog.convertTo(xdog, CV_32F, 1.0 / 255.0);
     
+    // Extended Difference of Gaussians (XDoG)
     for (int y = 0; y < xdog.rows; y++) {
         for (int x = 0; x < xdog.cols; x++) {
             float val = xdog.at<float>(y, x);
@@ -253,6 +249,7 @@ torch::Tensor get_edge_map(cv::Mat image_input) {
     return xdog_tensor;
 }
 
+// Get path shapes for sampled indices
 PathCPP get_path(torch::Tensor indices_normalised, int strokes_counter) {
     torch::Tensor inds = indices_normalised.clone();
     float radius = 0.05f;
@@ -263,20 +260,24 @@ PathCPP get_path(torch::Tensor indices_normalised, int strokes_counter) {
     
     torch::Tensor points = torch::zeros({4, 2}).to(torch::kFloat32).to(torch::kCUDA);
 
+    // get first point from indices
     torch::Tensor p0 = inds.index({strokes_counter});
     points.index_put_({0}, p0);
 
+    // Generate remaining 3 control points randomly in a radius of 0.05
     for(int i = 1; i < points.size({0}); i++) {
         torch::Tensor p1 = torch::tensor({p0.index({0}).item<float>() + radius * (dis(rng) - 0.5f), p0.index({1}).item<float>() + radius * (dis(rng) - 0.5f)});
         points.index_put_({i}, p1);
         p0 = p1;
     }
 
+    // Multiply by 224 to get point coordinates and clamp
     points = points * 224;
     points = points.clamp(0, 224);
 
     torch::Tensor num_control_points = torch::tensor({2}, torch::kInt32);
 
+    // Construct Path
     PathCPP path = PathCPP( num_control_points,
                             points,
                             false,                  // is_closed
@@ -293,18 +294,49 @@ torch::Tensor softmax_above_zero(torch::Tensor x) {
     return e_x / e_x.sum();
 }
 
-// Visualize distribution map and save it to output/distribution_map.png
-void visualize_distr_map(torch::Tensor distribution_map, torch::Tensor row_indices, torch::Tensor col_indices, int num_strokes) {
+// Visualize distribution map and save it
+void save_distr_map(string filename, torch::Tensor distr_map, torch::Tensor row_indices, torch::Tensor col_indices, int num_strokes) {
+    torch::Tensor distribution_map = distr_map.clone().contiguous().cpu();
     distribution_map = (distribution_map - distribution_map.min()) / (distribution_map.max() - distribution_map.min()); 
-    cv::Mat temp3(224, 224, CV_32FC1, distribution_map.to(torch::kCPU).data_ptr<float>());
-    temp3.convertTo(temp3, CV_8UC1, 255);
-    cv::applyColorMap(temp3, temp3, cv::COLORMAP_VIRIDIS);
+    cv::Mat png(224, 224, CV_32FC1, distribution_map.to(torch::kCPU).data_ptr<float>());
+    png.convertTo(png, CV_8UC1, 255);
+    cv::applyColorMap(png, png, cv::COLORMAP_VIRIDIS);
+    // Red dots for sampled points
     for(int i = 0; i < num_strokes; i++) {
         int row = row_indices.index({i}).item<int>();
         int col = col_indices.index({i}).item<int>();
-        temp3.at<cv::Vec3b>(row, col)[0] = 0;
-        temp3.at<cv::Vec3b>(row, col)[1] = 0;
-        temp3.at<cv::Vec3b>(row, col)[2] = 255;
+        png.at<cv::Vec3b>(row, col)[0] = 0;
+        png.at<cv::Vec3b>(row, col)[1] = 0;
+        png.at<cv::Vec3b>(row, col)[2] = 255;
     }
-    cv::imwrite("../output/distribution_map.png", temp3);
+    if(cv::imwrite(filename, png)) {
+        cout << "Distribution map saved successfully" << endl;
+    } else {
+        cout << "Error saving distribution map" << endl;
+    }
+}
+
+// Visualize attention map and save it
+void save_attn_map(string filename, torch::Tensor attn_map) {
+    torch::Tensor attention_map = attn_map.clone().contiguous().cpu();
+    cv::Mat png(224, 224, CV_32FC1, attention_map.to(torch::kCPU).data_ptr<float>());
+    png.convertTo(png, CV_8UC1, 255);
+    cv::applyColorMap(png, png, cv::COLORMAP_VIRIDIS);
+    if(cv::imwrite(filename, png)) {
+        cout << "Attention map saved successfully" << endl;
+    } else {
+        cout << "Error saving attention map" << endl;
+    }
+}
+
+// Visualize edge map and save it
+void save_edge_map(string filename, torch::Tensor edg_map) {
+    torch::Tensor edge_map = edg_map.clone().contiguous().cpu();
+    cv::Mat png(224, 224, CV_32FC1, edge_map.to(torch::kCPU).data_ptr<float>());
+    png.convertTo(png, CV_8UC1, 255);
+    if(cv::imwrite(filename, png)) {
+        cout << "Edge map saved successfully" << endl;
+    } else {
+        cout << "Error saving edge map" << endl;
+    }
 }

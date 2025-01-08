@@ -20,9 +20,15 @@ In this file I implemented the RenderFunction from the Pytorch part of diffvg in
 Since I only need the ShapeType Path I ignored everything that had to do with other ShapeTypes.
 I also changed a couple of things if I didn't need their functionality.
 You can find the original function in render_pytorch.py in the diffvg GitHub.
+
+Currently there is still a problem with the flow of gradients.
+Autograd applies the tensors from the torch::autograd::tensor_list returned by backward to the inputs of forward as gradients.
+In render_pytorch.py the forward function takes the arguments from serialize_scene as individual arguments.
+In C++ this is not as easy and I haven't found a solution yet.
+So currently the arguments are passed as a vector but they need to be passed individually.
 */
 
-
+// Pack inputs into vector of arguments to be passed to forward
 vector<custom_variant> RenderFunction::serialize_scene(int canvas_width,
                                                        int canvas_height,
                                                        vector<PathCPP> paths,
@@ -46,6 +52,7 @@ vector<custom_variant> RenderFunction::serialize_scene(int canvas_width,
     args.push_back(use_prefiltering);
     args.push_back(eval_positions.to(torch::kCUDA));
 
+    // Normally you would differentiate between the possible shape types but we only use paths
     for(PathCPP pth : paths) {
         bool use_thickness = false;
         assert(pth.num_control_points.is_contiguous());
@@ -76,6 +83,7 @@ vector<custom_variant> RenderFunction::serialize_scene(int canvas_width,
         args.push_back(grp.shape_ids.to(torch::kInt32).cpu());
         args.push_back(false); // No fill color
 
+        // Normally you would differentiate between the possible color types but we only use constant
         assert(grp.stroke_color.is_contiguous());
         args.push_back(ColorType::Constant);
         args.push_back(grp.stroke_color.cpu());
@@ -92,14 +100,14 @@ vector<custom_variant> RenderFunction::serialize_scene(int canvas_width,
 
 // Forward rendering pass
 torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
-                                      torch::Tensor input,
+                                      torch::Tensor input, // Dummy tensor to be multiplied with rendered_image so rendered_image gets properly attached to computation graph
                                       int width,
                                       int height,
                                       int num_samples_x,
                                       int num_samples_y,
                                       int seed,
                                       // torch::Tensor background_image,
-                                      vector<custom_variant> args
+                                      vector<custom_variant> args // Arguments should be passed individually but I have no solution yet
                                       ) {
     
     // Unpack arguments
@@ -121,13 +129,15 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
 
     vector<const Shape*> shapes;
     vector<const ShapeGroup*> shape_groups;
+    // Store pointers so we can destroy them at the end
     vector<ptr<Path>> path_pointers;
-    vector<Path> path_contents;
     vector<ptr<Constant>> color_pointers;
-    vector<Constant> color_contents;
 
-    // Vectors to store the individual variables of the shapes and shape_groups structs because torch::AutogradContext can only store 
-    // standard C++ types
+    /*
+    Vectors to store the individual variables of the shapes and shape_groups structs because torch::autograd::AutogradContext can only store standard C++ types.
+    In python you can just pass the scene into the context.
+    I store bool, ShapeType, OutputType, ColorType and FilterType as int and reconstruct them in backward.
+    */
     
     // Shapes
     vector<torch::Tensor> num_control_points_contents;
@@ -143,9 +153,13 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
     vector<int> use_even_odd_rule_contents;
     vector<torch::Tensor> shape_to_canvas_contents;
 
+    // Construct paths and shapes
     for(int i = 0; i < num_shapes; i++) {
         ShapeType shape_type = get<ShapeType>(args.at(current_index));
         current_index += 1;
+
+        // Normally you would differentiate between the possible shape types but we only use paths
+
         torch::Tensor num_control_points = get<torch::Tensor>(args.at(current_index));
         current_index += 1;
         torch::Tensor points = get<torch::Tensor>(args.at(current_index));
@@ -159,9 +173,9 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
 
         ptr<Path> path = new Path(num_control_points.data_ptr<int>(),
                                   points.data_ptr<float>(),
-                                  nullptr, // because thickness is false
-                                  static_cast<int>(num_control_points.size(0)),
-                                  static_cast<int>(points.size(0)),
+                                  nullptr,                                      // nullptr because no thickness
+                                  static_cast<int>(num_control_points.size(0)), // num_base_points
+                                  static_cast<int>(points.size(0)),             // num_points
                                   is_closed,
                                   use_distance_approx
                                   );
@@ -173,7 +187,6 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
                                        path->get_ptr(),
                                        stroke_width.item<float>());
 
-        path_contents.push_back(*path.get());
         path_pointers.push_back(path);
         shapes.push_back(shape);
 
@@ -185,6 +198,7 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
         stroke_width_contents.push_back(stroke_width);
     }
 
+    // Construct shape groups
     for(int i = 0; i < num_shape_groups; i++) {
         torch::Tensor shape_ids = get<torch::Tensor>(args.at(current_index));
         current_index += 1;
@@ -193,6 +207,9 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
         bool fill_color = false;
         ColorType stroke_color_type = get<ColorType>(args.at(current_index));
         current_index += 1;
+
+        // Normally you would differentiate between the possible color types but we only use constant
+
         torch::Tensor color = get<torch::Tensor>(args.at(current_index));
         ptr<Constant> stroke_color = new Constant(Vector4f(color.index({0}).item<float>(), 
                                                            color.index({1}).item<float>(), 
@@ -206,16 +223,15 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
         current_index += 1;
 
         const ShapeGroup* shape_group = new ShapeGroup(shape_ids.data_ptr<int>(),
-                                                       static_cast<int>(shape_ids.size(0)),
-                                                       ColorType::Constant,
-                                                       nullptr,
+                                                       static_cast<int>(shape_ids.size(0)), // num_shapes
+                                                       ColorType::Constant,                 // fill_color_type
+                                                       nullptr,                             // fill_color
                                                        stroke_color_type,
                                                        stroke_color->get_ptr(),
                                                        use_even_odd_rule,
                                                        shape_to_canvas.data_ptr<float>()
                                                        );
 
-        color_contents.push_back(*stroke_color.get());
         color_pointers.push_back(stroke_color);
         shape_groups.push_back(shape_group);
 
@@ -226,21 +242,24 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
         shape_to_canvas_contents.push_back(shape_to_canvas);
     }
 
+    // Construct Filter
     FilterType filter_type = get<FilterType>(args.at(current_index));
     current_index += 1;
     torch::Tensor filter_radius = get<torch::Tensor>(args.at(current_index));
     current_index += 1;
     Filter filt = Filter(filter_type, filter_radius.item<float>());
 
+    // Construct Scene as shared pointer
     std::shared_ptr<Scene> scene = std::make_shared<Scene>(canvas_width,
                                                            canvas_height,
                                                            shapes, 
                                                            shape_groups,
                                                            filt, 
-                                                           true,
-                                                           static_cast<int>(torch::Device("cuda").index())
+                                                            true,                                           // use_gpu
+                                                           static_cast<int>(torch::Device("cuda").index())  // gpu_index
                                                            );
-                    
+
+    // Init rendered_image        
     torch::Tensor rendered_image;
     if(output_type == OutputType::color) {
         assert(eval_positions.size(0) == 0);
@@ -254,6 +273,7 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
         }
     }
 
+    // Dinamically open diffvg.so shared library
     const char* diffvg_library_path = "libdiffvg.so";
     void* handle = dlopen(diffvg_library_path, RTLD_LAZY);
     if(!handle) {
@@ -280,6 +300,7 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
                                 int
                                 );
 
+    // Get render function from shared library
     void_func_t render = (void_func_t)dlsym(handle, /*render function in libdiffvg.so*/ "_Z6renderSt10shared_ptrI5SceneE3ptrIfES3_S3_iiiimS3_S3_S3_S3_bS3_i"); 
     const char* error = dlerror();
     if (error != nullptr) {
@@ -316,6 +337,7 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
 
     assert(torch::isfinite(rendered_image).all().item<bool>());
 
+    // Destroy pointers
     for (auto color : color_pointers) {
         color.destroy();
     }
@@ -329,8 +351,7 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
         delete shape_group;
     }
     
-    ctx->saved_data["canvas_width"] = canvas_width;
-    ctx->saved_data["canvas_height"] = canvas_height;
+    // Store needed values in torch::autograd::AutogradContext
 
     // Shapes
     ctx->saved_data["num_shapes"] = num_shapes;
@@ -353,6 +374,8 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
     ctx->saved_data["filter_type_int"] = static_cast<int>(filter_type);
     ctx->saved_data["filter_radius"] = filter_radius;
 
+    ctx->saved_data["canvas_width"] = canvas_width;
+    ctx->saved_data["canvas_height"] = canvas_height;
     ctx->saved_data["width"] = width;
     ctx->saved_data["height"] = height;
     ctx->saved_data["num_samples_x"] = num_samples_x;
@@ -361,11 +384,12 @@ torch::Tensor RenderFunction::forward(torch::autograd::AutogradContext *ctx,
     ctx->saved_data["output_type_int"] = static_cast<int>(output_type);
     ctx->saved_data["use_prefiltering"] = use_prefiltering;
     ctx->saved_data["eval_positions"] = eval_positions;
-    ctx->saved_data["background_image"] = 0;
+    // ctx->saved_data["background_image"] = 0;
 
     return rendered_image * input;
 }
 
+// Backward rendering pass
 torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradContext *ctx,
                                                       torch::autograd::tensor_list grad_img_list
                                                       ) {
@@ -377,8 +401,7 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
     }
     assert(torch::isfinite(grad_img).all().item<bool>());
 
-    auto canvas_width = ctx->saved_data["canvas_width"].toInt();
-    auto canvas_height = ctx->saved_data["canvas_height"].toInt();
+    // Get needed values from torch::autograd::AutogradContext
 
     // Shapes
     auto num_shapes = ctx->saved_data["num_shapes"].toInt();
@@ -401,6 +424,8 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
     auto filter_type_int = ctx->saved_data["filter_type_int"].toInt();
     auto filter_radius = ctx->saved_data["filter_radius"].toTensor();
 
+    auto canvas_width = ctx->saved_data["canvas_width"].toInt();
+    auto canvas_height = ctx->saved_data["canvas_height"].toInt();
     auto width = ctx->saved_data["width"].toInt();
     auto height = ctx->saved_data["height"].toInt();
     auto num_samples_x = ctx->saved_data["num_samples_x"].toInt();
@@ -409,8 +434,9 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
     auto output_type_int = ctx->saved_data["output_type_int"].toInt();
     auto use_prefiltering = ctx->saved_data["use_prefiltering"].toBool();
     auto eval_positions = ctx->saved_data["eval_positions"].toTensor();
-    auto background_image = ctx->saved_data["background_image"];
+    // auto background_image = ctx->saved_data["background_image"];
 
+    // Reconstruct OutputType from int
     OutputType output_type;
     if(output_type_int == 0)
         output_type = OutputType::color;
@@ -421,9 +447,11 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
 
     vector<const Shape*> shapes;
     vector<const ShapeGroup*> shape_groups;
+    // Store pointers so we can destroy them at the end
     vector<ptr<Path>> path_pointers;
     vector<ptr<Constant>> color_pointers;
         
+    // Construct paths and shape types from context
     for(int i = 0; i < num_shapes; i++) {
         ptr<Path> path = new Path(num_control_points_contents[i].data_ptr<int>(),
                                   points_contents[i].data_ptr<float>(),
@@ -434,6 +462,7 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
                                   use_distance_approx_contents.index({i}).item<bool>()
                                   );
 
+        // Reconstruct ShapeType from int
         ShapeType shape_type;
         if(shape_type_contents.index({i}).item<int>() == 0)
             shape_type = ShapeType::Circle;
@@ -454,7 +483,9 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
         shapes.push_back(shape);
     }
 
+    // Construct shape groups from context
     for(int i = 0; i < num_shape_groups; i++) {
+        // Reconstruct ColorType from int
         ColorType stroke_color_type;
         if(stroke_color_type_contents.index({i}).item<int>() == 0)
             stroke_color_type = ColorType::Constant;
@@ -485,6 +516,7 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
         color_pointers.push_back(stroke_color);
     }
 
+    // Reconstruct FilterType from int
     FilterType filter_type;
     if(filter_type_int == 0)
         filter_type = FilterType::Box;
@@ -499,6 +531,7 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
     
     Filter filt = Filter(filter_type, filter_radius.item<float>());
 
+    // Construct Scene as shared pointer
     std::shared_ptr<Scene> scene = std::make_shared<Scene>(canvas_width,
                                                            canvas_height,
                                                            shapes, 
@@ -508,6 +541,7 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
                                                            static_cast<int>(torch::Device("cuda").index())
                                                            );
 
+    // Dinamically open diffvg.so shared library
     const char* diffvg_library_path = "libdiffvg.so";
     void* handle = dlopen(diffvg_library_path, RTLD_LAZY);
     if(!handle) {
@@ -534,6 +568,7 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
                                 int
                                 );
 
+    // Get render function from shared library
     void_func_t render = (void_func_t)dlsym(handle, /*render function in libdiffvg.so*/ "_Z6renderSt10shared_ptrI5SceneE3ptrIfES3_S3_iiiimS3_S3_S3_S3_bS3_i"); 
     const char* error = dlerror();
     if (error != nullptr) {
@@ -568,27 +603,16 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
 
     dlclose(handle);
 
-    for (auto color : color_pointers) {
-        color.destroy();
-    }
-    for (auto path : path_pointers) {
-        path.destroy();
-    }
-    for (auto shape : shapes) {
-        delete shape;
-    }
-    for (auto shape_group : shape_groups) {
-        delete shape_group;
-    }
-
+    // Store gradients in tensor_list
     torch::autograd::tensor_list d_args;
 
+    d_args.push_back(torch::Tensor()); // input
     d_args.push_back(torch::Tensor()); // width
     d_args.push_back(torch::Tensor()); // height
     d_args.push_back(torch::Tensor()); // num_samples_x
     d_args.push_back(torch::Tensor()); // num_samples_y
     d_args.push_back(torch::Tensor()); // seed
-    d_args.push_back(torch::Tensor()); // d_background_image
+    // d_args.push_back(torch::Tensor()); // d_background_image
     d_args.push_back(torch::Tensor()); // canvas_width
     d_args.push_back(torch::Tensor()); // canvas_height
     d_args.push_back(torch::Tensor()); // num_shapes
@@ -605,7 +629,7 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
         // Normally you would differentiate between the possible shape types but we only use paths
         if(d_shape.type == ShapeType::Path) {
             Path d_path = d_shape.as_path();
-            torch::Tensor points = torch::zeros((d_path.num_points, 2));
+            torch::Tensor points = torch::zeros({d_path.num_points, 2});
             torch::Tensor thickness = torch::Tensor();
             if(d_path.has_thickness()) {
                 use_thickness = true;
@@ -615,8 +639,9 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
                 d_path.copy_to(points.data_ptr<float>(), nullptr);
             }
             assert(torch::isfinite(points).all().item<bool>());
-            if(thickness.defined())
+            if(thickness.defined()) {
                 assert(torch::isfinite(thickness).all().item<bool>());
+            }
             d_args.push_back(torch::Tensor()); // num_control_points
             d_args.push_back(points);
             d_args.push_back(thickness);
@@ -666,6 +691,20 @@ torch::autograd::tensor_list RenderFunction::backward(torch::autograd::AutogradC
     
     d_args.push_back(torch::Tensor()); // filter_type
     d_args.push_back(torch::tensor({scene->get_d_filter_radius()}));
+
+    // Destroy pointers
+    for (auto color : color_pointers) {
+        color.destroy();
+    }
+    for (auto path : path_pointers) {
+        path.destroy();
+    }
+    for (auto shape : shapes) {
+        delete shape;
+    }
+    for (auto shape_group : shape_groups) {
+        delete shape_group;
+    }
 
     return d_args;
 }

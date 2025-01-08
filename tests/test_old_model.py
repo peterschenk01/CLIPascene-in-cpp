@@ -1,12 +1,14 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import CLIP_.clip as clip
+import CLIP_.clip as clip # CLIP_ from SceneSketch/CLIPascene
 from torchvision import transforms
 import torch
 from PIL import Image
 import PIL
 import numpy as np
+
+""" Test file for CLIP model as it is used in SceneSketch/CLIPascene. (not included in my git repository)"""
 
 # torch.set_printoptions(threshold=torch.inf)
 # np.set_printoptions(threshold=np.inf)

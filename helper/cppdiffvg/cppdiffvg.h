@@ -2,6 +2,7 @@
 #define CPPDIFFVG_H_
 
 #include <iostream>
+#include <chrono>
 #include <typeinfo>
 #include <cassert>
 #include <dlfcn.h>
@@ -34,21 +35,20 @@ public:
                                                   torch::Tensor eval_positions = torch::tensor({})
                                                   );
 
-static torch::Tensor forward(torch::autograd::AutogradContext *ctx,
-                             torch::Tensor input,
-                             int width,
-                             int height,
-                             int num_samples_x,
-                             int num_samples_y,
-                             int seed,
-                             // torch::Tensor background_image,
-                             vector<custom_variant> args
-                             );
+    static torch::Tensor forward(torch::autograd::AutogradContext *ctx,
+                                 torch::Tensor input,
+                                 int width,
+                                 int height,
+                                 int num_samples_x,
+                                 int num_samples_y,
+                                 int seed,
+                                 // torch::Tensor background_image,
+                                 vector<custom_variant> args
+                                 );
 
-static torch::autograd::tensor_list backward(torch::autograd::AutogradContext *ctx,
-                                             torch::autograd::tensor_list grad_img
-                                             );
-
+    static torch::autograd::tensor_list backward(torch::autograd::AutogradContext *ctx,
+                                                torch::autograd::tensor_list grad_img
+                                                );
 };
 
 #endif
