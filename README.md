@@ -30,7 +30,7 @@ This project was created as part of my bachelor's thesis.
     - **Language**: C++  
     - **Compute platform**: CUDA (check which version you have installed)
 
-- Download the archive into this directory (e.g. `libtorch-shared-with-deps-2.9.1%2Bcu128.zip`)
+- Download the archive (e.g. `libtorch-shared-with-deps-2.9.1%2Bcu128.zip`) into this directory
 
 ``` bash
 curl -O https://download.pytorch.org/libtorch/cu128/libtorch-shared-with-deps-2.9.1%2Bcu128.zip
