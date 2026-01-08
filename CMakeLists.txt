@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Libtorch
-set(LIBTORCH_DIR "/usr/local/libtorch")
+set(LIBTORCH_DIR "libtorch")
 set(CMAKE_PREFIX_PATH ${LIBTORCH_DIR})
 find_package(Torch REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")

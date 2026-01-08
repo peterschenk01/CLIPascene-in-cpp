@@ -10,5 +10,8 @@
 CLIP/clip/__pycache__/
 CLIP_/
 
+#Libtorch
+libtorch/
+
 models/
 build/
