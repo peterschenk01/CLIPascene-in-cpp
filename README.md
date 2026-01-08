@@ -18,11 +18,18 @@ This project was created as part of my bachelor's thesis.
 - `output/` — outputs
 - `tests/` — tests
 
-## Requirements (Ubuntu / Debian)
+## Installation (Ubuntu / Debian)
 
 > **Hint:** This implementation currently requires CUDA.
 
-### 1. Install Libtorch
+### 1. Clone this repository
+
+``` bash
+git clone https://github.com/peterschenk01/CLIPascene-in-cpp.git
+cd CLIPascene-in-cpp
+```
+
+### 2. Install Libtorch
 
 - Go to the official [PyTorch download page](https://pytorch.org/get-started/locally/) and select:
 
@@ -48,21 +55,21 @@ unzip libtorch-shared-with-deps-2.9.1%2Bcu128.zip
 rm libtorch-shared-with-deps-2.9.1%2Bcu128.zip
 ```
 
-### 2. Install OpenCV
+### 3. Install OpenCV
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y libopencv-dev
 ```
 
-### 3. Install CMake
+### 4. Install CMake
 
 ``` bash
 sudo apt-get update
 sudo apt-get install -y cmake
 ```
 
-### 4. Create python environment and install requirements
+### 5. Create python environment and install requirements
 
 ``` bash
 python -m venv .venv
