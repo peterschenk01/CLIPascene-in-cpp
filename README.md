@@ -4,6 +4,47 @@ A C++ port of [**CLIPascene / SceneSketch**](https://github.com/yael-vinker/Scen
 
 This project was created as part of my bachelor's thesis.
 
+---
+
+> **! This project was not finished.** Below is a demonstration of what my implementation can do. !
+
+---
+
+### Input
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/c6c7c47e-1559-4b54-a994-de6eea9ca504" width="320" />
+</p>
+<p align="center"><em>Input Image</em></p>
+
+---
+
+### Intermediate Maps
+<table align="center">
+  <tr>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/3f4dc2fd-3460-46f6-88b3-d5880ee91ae5" width="224" /><br/>
+      <strong>Attention Map</strong> <br/> <em>(CLIP)</em>
+    </td>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/4373a97f-6e3a-49b5-934d-17656850c36d" width="224" /><br/>
+      <strong>Edge Map</strong> <br/> <em>(XDoG)</em>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/1f8a9488-f395-44d8-89d0-7314a4cdfb72" width="224" /><br/>
+      <strong>Distribution Map</strong><br/>
+      <em>(Attention + Edge)</em>
+    </td>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/8c4ed4e3-8e1b-4a41-9932-2721f9f8a454" width="224" /><br/>
+      <strong>Strokes Initialization</strong> <br/> <em>(rasterized with diffvg)</em>
+    </td>
+  </tr>
+</table>
+
+---
+
 ## Repository layout
 
 - `clipascene.cpp` — main executable entry point
