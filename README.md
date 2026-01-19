@@ -1,4 +1,4 @@
-# CLIPascene-in-cpp
+# CLIPascene port in C++
 
 A C++ port of [**CLIPascene / SceneSketch**](https://github.com/yael-vinker/SceneSketch) with the long-term goal of running on Android.
 
